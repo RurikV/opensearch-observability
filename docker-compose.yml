@@ -1,0 +1,77 @@
+name: opensearch-observability
+
+# OpenSearch observability plane for the OpenSearch Stack course homework.
+# Collects WooCommerce store logs (Nginx / MySQL / PHP / Docker container / Linux)
+# via Fluent Bit into OpenSearch, viewed in OpenSearch Dashboards.
+#
+# The WooCommerce store itself is deployed SEPARATELY (../woocommerce-observability)
+# and stays running on :8080 — Fluent Bit reads its log files read-only.
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:${OPENSEARCH_VERSION:-3.7.0}
+    container_name: os-node
+    environment:
+      - cluster.name=opensearch-observability
+      - node.name=os-node
+      - discovery.type=single-node
+      # bootstrap.memory_lock left off: Colima's runc rejects RLIMIT_MEM_LOCK=-1
+      # (unlimited). Memory locking is optional; OpenSearch runs without it.
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      # OpenSearch 3.x: a custom admin password is MANDATORY (demo admin/admin was
+      # removed in 2.12). The security plugin installs the demo config + self-signed
+      # certs on first boot using this password.
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:?set a strong admin password in .env}
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "9202:9200"   # REST (HTTPS, self-signed) — 9202 to avoid HW1 ES on 9200/9201
+    volumes:
+      - os-data:/usr/share/opensearch/data
+    networks: [os-net]
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION:-3.7.0}
+    container_name: os-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=https://os-node:9200
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_SSL_VERIFICATIONMODE=none   # self-signed demo cert on the node
+      - SERVER_HOST=0.0.0.0
+    ports:
+      - "5602:5601"   # Dashboards UI — 5602 to avoid HW1 Kibana on 5601
+    depends_on: [opensearch]
+    networks: [os-net]
+
+  fluent-bit:
+    image: fluent/fluent-bit:${FLUENT_BIT_VERSION:-5.0.9}
+    container_name: os-fluent-bit
+    depends_on: [opensearch]
+    environment:
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers_custom.conf:/fluent-bit/etc/parsers_custom.conf:ro
+      # WooCommerce store component logs (the separately-deployed store):
+      - ${WC_LOGS_DIR:?set WC_LOGS_DIR to the store's logs dir in .env}/nginx:/var/log/woocommerce/nginx:ro
+      - ${WC_LOGS_DIR}/mysql:/var/log/woocommerce/mysql:ro
+      - ${WC_LOGS_DIR}/php:/var/log/woocommerce/php:ro
+      # Docker container logs (store containers + host's k8s pods) and Linux system
+      # logs (systemd journald) from the Docker host:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /run/systemd:/run/systemd:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      # Fluent Bit position DBs (resume after restart):
+      - fb-state:/fluent-bit/state
+    networks: [os-net]
+
+volumes:
+  os-data:
+  fb-state:
+
+networks:
+  os-net:
+    driver: bridge

@@ -1,0 +1,5 @@
+# local secrets — copy from .env.example
+.env
+
+# OS cruft
+.DS_Store
