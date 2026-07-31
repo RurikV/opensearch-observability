@@ -103,3 +103,20 @@ password, select the **Global** tenant) → **Discover** → pick each
   `Read_From_Head On` to ingest it; a `SELECT SLEEP(3)` populates the slow log.
 - The OpenSearch node uses the security plugin's **demo self-signed cert** — fine
   for a local stack, not for anything exposed.
+
+## Security (least-privilege user) — not for production
+
+The write-path integrations (Fluent Bit here; the health collector in
+opensearch-dashboards-alerting; Data Prepper in opensearch-trace-analytics) ship
+data as the dedicated least-privilege **`observability`** user — **not `admin`**.
+`admin` is used only for one-time cluster/Dashboards setup and Dashboards login
+(acceptable for a local demo; **not for production** — in prod use fine-grained
+roles, per-service users, and real TLS).
+
+- Role + user: [`security/role-observability-writer.json`](security/role-observability-writer.json) +
+  [`security/setup-observability-user.sh`](security/setup-observability-user.sh).
+- Create once (as admin): `ADMIN_PW=... OBS_PW=... sh security/setup-observability-user.sh`
+- The role grants write/create/manage only on `woocommerce-*` / `os-health-*` /
+  `otel-v1-apm-*` (+ cluster monitor, index templates, ISM, ingest pipelines,
+  read-only alias lookup). Verified: 201 on allowed indices, 403 on others + on
+  the security API.

@@ -1,0 +1,20 @@
+{
+  "description": "Least-privilege role for the observability write-path integrations (Fluent Bit log shipper, cluster-health collector, Data Prepper). Grants write/create/manage only on the observability index patterns, plus the cluster perms those tools need (templates, ISM policies, ingest pipelines, cluster health) and a read-only cluster-wide alias lookup (Data Prepper's sink init scans aliases across all indices). NOT admin. See setup-observability-user.sh.",
+  "cluster_permissions": [
+    "cluster_monitor",
+    "cluster_manage_index_templates",
+    "cluster:admin/ingest/pipeline/*",
+    "cluster:admin/opendistro/ism/*"
+  ],
+  "index_permissions": [
+    {
+      "index_patterns": ["woocommerce-*", "os-health-*", "otel-v1-apm-*"],
+      "allowed_actions": ["crud", "manage"]
+    },
+    {
+      "index_patterns": ["*"],
+      "allowed_actions": ["indices:admin/aliases/get"]
+    }
+  ],
+  "tenant_permissions": []
+}
